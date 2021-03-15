@@ -2503,7 +2503,7 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<
 vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_ptr<FitInfo>>& info)
 {
     vector<std::shared_ptr<LinearFitFunc>> res;
-    bool numGood = 0;
+    int numGood = 0;
     for(int i = 0; i < info.size(); i++)
     {
         if(!info[i]->broken)
@@ -2623,8 +2623,10 @@ void MarkBrokenFit(vector<std::shared_ptr<FitInfo>>& v,  double threshold)
     }
     
     //first we compute the mean value of the error
-    auto lambda = [&](const std::shared_ptr<FitInfo> a, const std::shared_ptr<FitInfo> b){ return a->error + b->error; };
-    double sum = std::accumulate(v.begin(), v.end(), 0.0, lambda);
+    double sum = 0.0;
+    std::for_each (std::begin(v), std::end(v), [&](const std::shared_ptr<FitInfo> info) {
+        sum += info->error;
+    });
     double mean = sum / v.size();
     
     //now compute the standard deviation

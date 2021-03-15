@@ -34,6 +34,7 @@
 #include "TSystem.h"
 
 #include <math.h> // for “fabs”
+#include <algorithm>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -86,6 +87,8 @@ public:
     broken(false)
     {}
 };
+
+std::vector<FitInfo> gInfo;
 
 
 //int m_nEtaBin(13);
@@ -158,7 +161,7 @@ void simpleOnBadFits( int iEtaBin, int iEnergyBin, int iBias );
 vector<double> testeFunctional(int iEtaBin, int iEnergyBin, int iBias);
 bool throwKinematics(int iEtaBin, int iEnergyBin, int iBias);
 
-vector<FitInfo> GetFitInfo(int iEtaBin, int iEnergyBin);
+vector<FitInfo> GetFitInfo(int iEtaBin, int iEnergyBin, bool excludingBiasMinusOne);
 void FindBrokenBias(vector<FitInfo>& v);
 
 /// Get the bin number of a given eta value
@@ -1814,7 +1817,7 @@ else
         */
     cout<<" teste 1" << endl;
     vector<float> param;
-    vector<FitInfo> v = GetFitInfo(iEtaBin, iEnergyBin);
+    vector<FitInfo> v = GetFitInfo(iEtaBin, iEnergyBin, false);
     cout<<" teste 2" << endl;
     FindBrokenBias(v);
     cout<<" teste 3" << endl;
@@ -2316,56 +2319,148 @@ void simpleOnBadFits( int iEtaBin, int iEnergyBin, int iBias )
    
 }
 
-vector<FitInfo> GetFitInfo(int iEtaBin, int iEnergyzBin)
+void LoadFitInfo(string path)
 {
-    
-    string pathOut = "/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat";
-    
-    cout<<" Get fitinto for etabin:  " << iEtaBin << "  and Energy: " << iEnergyBin << endl;
-    ifstream file2(pathOut);  
-    std::string str; 
-    int bin, energy, bias;
-    double error, constant, mean, sigma, alpha, n;
-    vector<FitInfo> res;
-    
-    if(!file2.is_open())
+    if(gInfo.empty())
     {
-        cout << "the state of the filestream is not right" <<endl;
-        cout << "Error: " << strerror(errno) <<endl;
-    }
-    
-    
-    while (std::getline(file2, str))
-    {
-        //cout << "line: " << str << endl;
-        //stringstream ss(str);
-        std::istringstream ss(str);
-        std::vector<std::string> numbers((std::istream_iterator<std::string>(ss)), 
-                                 std::istream_iterator<std::string>());
-        //cout << "bin: " << numbers[0] << "energy: " << numbers[1] << " bias: " << numbers[2] <<  " error:" << numbers[3] <<" constant: "<< numbers[4] <<endl;
-        bin = stoi(numbers[0]);
-        energy = stoi(numbers[1]);
-        bias = stoi(numbers[2]);
-        error = stod(numbers[3]);
-        constant = stod(numbers[4]);
-        mean = stod(numbers[5]);
-        sigma = stod(numbers[6]);
-        alpha = stod(numbers[7]);
-        n = stod(numbers[8]);
-        //cout << " after parsing bin: " << bin << "energy: " << energy << " bias: " << bias <<  " error:" << error <<" constant: "<< constant <<endl;
-        if(bin == iEtaBin && energy == iEnergyBin)
+        string pathOut = "/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat";
+        
+        cout<<" Read fitinto from:  " << path<< endl;
+        ifstream file2(path);
+        std::string str;
+        int bin, energy, bias;
+        double error, constant, mean, sigma, alpha, n;
+        vector<FitInfo> res;
+        
+        if(!file2.is_open())
         {
-            //found
-            res.push_back(FitInfo(bin, energy, bias, constant, mean, sigma, alpha, n, error));
+            cout << "the state of the filestream is not right" <<endl;
+            cout << "Error: " << strerror(errno) <<endl;
+            return;
         }
-         
+        
+        
+        while (std::getline(file2, str))
+        {
+            std::istringstream ss(str);
+            std::vector<std::string> numbers((std::istream_iterator<std::string>(ss)),
+                                     std::istream_iterator<std::string>());
+            bin = stoi(numbers[0]);
+            energy = stoi(numbers[1]);
+            bias = stoi(numbers[2]);
+            error = stod(numbers[3]);
+            constant = stod(numbers[4]);
+            mean = stod(numbers[5]);
+            sigma = stod(numbers[6]);
+            alpha = stod(numbers[7]);
+            n = stod(numbers[8]);
+                
+            gInfo.push_back(FitInfo(bin, energy, bias, constant, mean, sigma, alpha, n, error));
+        }
+        cout<< "Read in total: " << gInfo.size() << "fit info data" << endl;
+        file2.close();
     }
-    cout<<" res size GetInfo " << res.size() << endl;
-    file2.close();
+}
+
+//Get all the fitinfo belong to iEtaBin and iEnergyBin, but we don't include FitInfo with bias = -1
+vector<FitInfo> GetFitInfo(int iEtaBin, int iEnergyzBin, bool excludingBiasMinusOne)
+{
+    vector<FitInfo> res;
+    //load the fitinfo if it is not loaded yet
+    LoadFitInfo("/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat");
+    for(int i = 0; i < gInfo.size(); i++)
+    {
+        if(gInfo[i].eta == iEtaBin && gInfo[i].energy == iEnergyBin)
+        {
+            if(gInfo[i].bias == -1 && excludingBiasMinusOne)
+                continue;
+            res.push_back(gInfo[i]);
+        }
+    }
     return res;
 }
 
-//To improve
+//only get the simulation data with eta = iEtaBin and bias = -1
+vector<FitInfo> GetFitInfoMCSimulation(int iEtaBin)
+{
+    vector<FitInfo> res;
+    LoadFitInfo("/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat");
+    double read = true;
+    for(int i = 0; i < gInfo.size(); i++)
+    {
+        if(gInfo[i].eta == iEtaBin)
+        {
+            if(gInfo[i].bias == -1)
+            {
+                if(read)
+                {
+                    res.push_back(gInfo[i]);
+                    read = false;
+                }
+                else
+                {
+                    read = true;
+                }
+            }
+        }
+    }
+}
+
+vector<FitInfo> GetFitInfoExperimentalData(int iEtaBin)
+{
+    vector<FitInfo> res;
+    LoadFitInfo("/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat");
+    double read = false;
+    for(int i = 0; i < gInfo.size(); i++)
+    {
+        if(gInfo[i].eta == iEtaBin)
+        {
+            if(gInfo[i].bias == -1)
+            {
+                if(read)
+                {
+                    res.push_back(gInfo[i]);
+                    read = false;
+                }
+                else
+                {
+                    read = true;
+                }
+            }
+        }
+}
+
+//This is an improved version to detect broken fit using Z-score algorithm
+void MarkBrokenFit(vector<FitInfo>& v,  double threshold)
+{
+    if(v.size() <= 1)
+    {
+        cout << "There is no enough data for us to analyze!" << endl;
+        return;
+    }
+    
+    //first we compute the mean value of the error
+    auto lambda = [&](FitInfo a, FitInfo b){ return a.error + b.error; };
+    double sum = std::accumulate(v.begin(), v.end(), 0.0, lambda);
+    double mean = sum / v.size();
+    
+    //now compute the standard deviation
+    double accum = 0.0;
+    std::for_each (std::begin(v), std::end(v), [&](const FitInfo info) {
+        accum += (info.error - mean) * (info.error - mean);
+    });
+
+    double stdev = sqrt(accum / (v.size() - 1));
+    //now mark the broken ones
+    for(int i = 0; i < v.size(); i++)
+    {
+        double z_score = fabs((v[i].error - mean) / stdev);
+        if(z_score > threshold)
+            v[i].broken = true;
+    }
+}
+
+
 void FindBrokenBias(vector<FitInfo>& v)
 {   
     cout<<" try to find broken for bin " << v[0].eta << "energy: " << v[0].energy << endl;
@@ -2413,10 +2508,6 @@ void FindBrokenBias(vector<FitInfo>& v)
     cout<<" finish check FindBrokenBias " << endl;
     
 }
-
-
-
-
 
 bool throwKinematics(int iEtaBin, int iEnergyBin, int iBias)
     {

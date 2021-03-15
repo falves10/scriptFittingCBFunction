@@ -35,6 +35,7 @@
 
 #include <math.h> // for “fabs”
 #include <algorithm>
+#include <map>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -88,7 +89,43 @@ public:
     {}
 };
 
-std::vector<FitInfo> gInfo;
+//linear function used to fix broken data
+class LinearFitFunc
+{
+public:
+    LinearFitFunc(double alpha, double beta): _alpha(alpha), _beta(beta){}
+    LinearFitFunc(const LinearFitFunc& a)
+    {
+        this._alpha = a._alpha;
+        this._beta = a._beta;
+    }
+    
+    double Func(double x)
+    {
+        return _beta * x + _alpha;
+    }
+private:
+    double _alpha;
+    double _beta;
+};
+
+std::vector<std::shared_ptr<FitInfo>> gInfo;
+std::vector<std::shared_ptr<FitInfo>> gMCInfo;
+std::vector<std::shared_ptr<FitInfo>> gDataInfo;
+typedef std::pair<int,int> BinEnergyPair;
+std::map<BinEnergyPair, std::vector<LinearFitFunc>> gFixFuncMap;
+std::map<int, std::vector<std:shared_ptr<LinearFitFunc>>> gFixFuncMCMap;
+std::map<int, std::vector<std::shared_ptr<LinearFitFunc>>> gFixFuncDataMap;
+
+void Initialize();
+void LoadFitInfo(string path);
+vector<std::shared_ptr<FitInfo>> GetFitInfo(int iEtaBin, int iEnergyzBin, bool excludingBiasMinusOne)
+vector<std::shared_ptr<FitInfo>> GetFitInfoMCSimulation(int iEtaBin);
+vector<std::shared_ptr<FitInfo>> GetFitInfoExperimentalData(int iEtaBin);
+vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<std::shared_ptr<FitInfo>>& info);
+vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_ptr<FitInfo>>& info);
+void MarkBrokenFit(vector<std::shared_ptr<FitInfo>>& v,  double threshold);
+void FindBrokenBias(vector<FitInfo>& v);
 
 
 //int m_nEtaBin(13);
@@ -160,9 +197,6 @@ bool checkedFailedFit( int iEtaBin, int iEnergyBin, int iBias );
 void simpleOnBadFits( int iEtaBin, int iEnergyBin, int iBias );
 vector<double> testeFunctional(int iEtaBin, int iEnergyBin, int iBias);
 bool throwKinematics(int iEtaBin, int iEnergyBin, int iBias);
-
-vector<FitInfo> GetFitInfo(int iEtaBin, int iEnergyBin, bool excludingBiasMinusOne);
-void FindBrokenBias(vector<FitInfo>& v);
 
 /// Get the bin number of a given eta value
 unsigned int binNbOfEta(double eta) 
@@ -1674,278 +1708,156 @@ if(globalRun)
 }
 else
 {
-        
-        /*
-        bool findBinToFix;
-        findBinToFix = throwKinematics(iEtaBin, iEnergyBin, iBias);
-        
-        cout<<" THROW " << findBinToFix << endl;
-    
-        if(findBinToFix)
-        {
-            
-            vector<double> m_params =  testeFunctional(iEtaBin, iEnergyBin, iBias);
-            cout<<" m_params size " << m_params.size() << endl;
-            
-            teste = true;
-            f2->SetParameters( m_params.at(0) , m_params.at(1)  , m_params.at(2) ,  m_params.at(3)  , m_params.at(4) );
-            
-             
-            f2->SetParLimits(0,1.,1e+10);
-            f2->SetParLimits(1,0.8,1.2);
-            f2->SetParLimits(2,0.01,0.5);
-            f2->SetParLimits(3,-2.,2.);
-            f2->SetParLimits(4,1.,10);
-            
-             TH1F *hRatio = new TH1F(Form("fabio_EoverP_period%i_eta%i_energy%i_bias%i",iperiod,iEtaBin,iEnergyBin,iBias), "", 50, 0.6, 2.); 
-            hRatio->Sumw2();
-
-            gStyle->SetOptFit(1);
-            gROOT->ForceStyle();
-
-            TCanvas* canvas = new TCanvas("canvas","canvas",800,600) ;
-            canvas->cd() ; 
-            TPad *pad1 =  new TPad("pad1","pad1name",0.01,0.31,0.99,0.99);
-            TPad *pad2 =  new TPad("pad2","pad2name",0.01,0.01,0.99,0.41);
-            pad1->Draw();pad2->Draw();
-            pad1->cd();
-            pad1->SetBottomMargin(0.16);
-            pad2->SetBottomMargin(0.24);
-            map_histog->SetMarkerStyle(20);
-            map_histog->SetMarkerSize(1.);
-            map_histog->GetYaxis()->SetTitle("Events");
-            map_histog->GetXaxis()->SetTitle("EoverP");
-            //map_histog->UseCurrentStyle();
-            map_histog->Draw("E");
-            map_histog->SaveAs(path+Form("fabio_EoverP_period%i_eta%i_energy%i_bias%i.root",iperiod,iEtaBin,iEnergyBin,iBias));
-            map_histog->Fit("f2", "r");
-
-            TString status_fit = gMinuit->fCstatu;
-
-            file_brokenfit << "eta" << iEtaBin <<"\t"<<"energy" << iEnergyBin <<"\t"<< "bias"<<iBias << "\t"<< status_fit << f2->GetParameter(0) << " " << f2->GetParameter(1) << " " << f2->GetParameter(2) << " " << f2->GetParameter(3) << "  " << f2->GetParameter(4) << endl;
-
-            //if(iEtaBin <= 7){
-            if(iEtaBin <= 16){
-            cout<< " low ETA RATIO " << endl;
-            //map_histog->Print("all");
-            for (int ibin = 11; ibin <= 32; ++ibin) {// nominal fit range
-            int low, high;
-            //low = 13; high = 32; 0.95-1.5
-            //for (int ibin = low; ibin <= high; ++ibin) {
-                if( map_histog->GetBinContent(ibin) > 0 ){
-                            double res =  (map_histog->GetBinContent(ibin)- f2->Eval( map_histog->GetBinCenter(ibin) ) )/map_histog->GetBinError(ibin);
-                            hRatio->SetBinContent(ibin, res  );
-                            hRatio->SetBinError(ibin, map_histog->GetBinError(ibin)  );
-                }
-           }       
-        } 
-            else{
-            cout<< " higher ETA RATIO " << endl;
-            for (int ibin = 10; ibin <= 32; ++ibin) {
-                if( map_histog->GetBinContent(ibin) > 0 ){
-                            double res =  (map_histog->GetBinContent(ibin)- f2->Eval( map_histog->GetBinCenter(ibin) ) )/map_histog->GetBinError(ibin);
-                            hRatio->SetBinContent(ibin, res  );
-                            hRatio->SetBinError(ibin, map_histog->GetBinError(ibin)  );
-                }
-           }       
-        }
-    
-            pad2->cd();
-          hRatio->GetXaxis()->SetTitle((Form("EoverP, #eta bin %i: abs(#eta) in range [%g, %g], E1/E2 bin %i", iEtaBin, m_etaBinning[iEtaBin], m_etaBinning[iEtaBin+1],iEnergyBin )));
-
-          //hRatio->GetXaxis()->SetTitle((Form("EoverP, #eta bin %i: abs(#eta) in range [%g, %g], E1/E2", iEtaBin, m_etaBinning[iEtaBin], m_etaBinning[iEtaBin+1] )));    
-    
-          hRatio->GetYaxis()->SetTitle("DATA / FIT");
-          //hRatio->GetXaxis()->SetRangeUser(84., 98.);
-          //hRatio->GetYaxis()->SetRangeUser(0.,1.3);
-          hRatio->GetYaxis()->SetRangeUser(-50.,50);
-          hRatio->GetXaxis()->SetLabelSize(0.1);
-          hRatio->GetYaxis()->SetLabelSize(0.08);
-          hRatio->GetXaxis()->SetTitleSize(0.08);
-          hRatio->GetYaxis()->SetTitleSize(0.09);
-          hRatio->GetYaxis()->SetTitleOffset(0.6);
-          hRatio->GetXaxis()->SetTitleOffset(1.2);
-          hRatio->Draw("E1");
-          //pad2->Modified();
-          //pad2->SetGridy();
-          pad2->RedrawAxis();
-          pad2->Update();   
-
-          canvas->SaveAs(path+Form("fabio_EoverP_period%i_eta%i_energy%i_bias%i.pdf",iperiod,iEtaBin,iEnergyBin,iBias));
-
- 
-          delete pad1;
-          delete pad2;
-          delete canvas;
-
-         double meanValue, errMeanValue;
-
-        if(iperiod == 0)
-        {
-            if(iEtaBin == 12 && iEnergyBin > 6 )
-            {
-                meanValue = 0;
-                errMeanValue  = 0;
-            }
-            else
-            {
-                meanValue = f2->GetParameter(1);
-                errMeanValue = f2->GetParError(1);
-            }
-        }
-        else if(iperiod == 1)
-        {
-            meanValue = f2->GetParameter(1);
-            errMeanValue = f2->GetParError(1);
-        }
-
-         //double meanValue = f2->GetParameter(1);
-         //double errMeanValue = f2->GetParError(1);
-
-         parameters.push_back(meanValue);//0
-         parameters.push_back(errMeanValue);//1
-            
-        }
-        else
-        {
-            double  meanValue = 0;
-            double  errMeanValue = 0;
-            parameters.push_back(meanValue);//0
-            parameters.push_back(errMeanValue);//1    
-            
-        }
-        */
-    cout<<" teste 1" << endl;
-    vector<float> param;
-    vector<FitInfo> v = GetFitInfo(iEtaBin, iEnergyBin, false);
-    cout<<" teste 2" << endl;
-    FindBrokenBias(v);
-    cout<<" teste 3" << endl;
-    for(int i = 0; i < v.size(); i++)
+    static bool bInitialized = false;
+    if(!bInitialized)
     {
-        cout << "state of index: " << i << "is: " << v[i].broken <<endl;
+        Initialize();
+        bInitialized = true;
+    }
+    
+    vector<float> param;
+    vector<std::shared_ptr<FitInfo>> v;
+    if(iBias != -1)
+    {
+        v = GetFitInfo(iEtaBin, iEnergyBin, true);
+    }
+    else
+    {
+        if(iperiod == 0)
+            v = GetFitInfoExperimentalData(iEtaBin);
+        if(iperiod == 1)
+            v = GetFitInfoMCSimulation(iEtaBin);
     }
     
     for(int i = 0; i < v.size(); i++)
     {
-        if(v[i].broken && v[i].bias == iBias)
+        if(v[i]->broken && v[i]->bias == iBias)
         {
-            cout << "index: " << i << " iEtaBin: " << iEtaBin << " Energy: " << iEnergyBin << " bias: " << v[i].bias << " is broken" <<std::endl;
+            cout << "bin: " << v[i]->eta << " energy: " << v[i]->energy << " bias: " << v[i]->bias << " period: " << iperiod << " is broken" << endl;
+            //it needs to be fixed
+            std::vector<std::shared_ptr<LinearFitFunc>> funcs;
+            if(iBias != -1 && gFixFuncMCMap.find(std::make_pair(iEtaBin, iEnergyBin)) != gFixFuncMCMap.end())
+                funcs = gFixFuncMCMap[std::make_pair(iEtaBin, iEnergyBin)];
+            else if(iperiod == 0 && gFixFuncDataMap.find(iEtaBin) != gFixFuncDataMap.end())
+                funcs = gFixFuncDataMap[iEtaBin];
+            else if(iperiod == 1 && gFixFuncMCMap.find(iEtaBin) != gFixFuncMCMap.end())
+                funcs = gFixFuncMCMap[iEtaBin];
+            else
+                ;
             
-            if(i == 0 || i == v.size() - 1)
+            if(!funcs.empty())
             {
-                cout  << "broken index is the first one or last one and we don't know how to fix" << std::endl;
-                parameters.push_back(0);//0
-                parameters.push_back(0);//1 
-                return parameters;
-                
-            }
-            
-            if(v[i-1].broken || v[i+1].broken)
-            {
-                cout << "our neighbour are broken as well,, sorry" << std::endl;
-                parameters.push_back(0);//0
-                parameters.push_back(0);//1 
-                return parameters;
-                
-            }
-            //otherwise , return the average of my neighbour
-            param.push_back((v[i-1].constant + v[i+1].constant) / 2);
-            param.push_back((v[i-1].mean + v[i+1].mean) / 2);
-            param.push_back((v[i-1].sigma + v[i+1].sigma) / 2);
-            param.push_back((v[i-1].alpha + v[i+1].alpha) / 2);
-            param.push_back((v[i-1].n + v[i+1].n) / 2);
-            cout << "fixed value is :" << param[0] << " " << param[1] << " " << param[2] << " " << param[3] << " " << param[4] << std::endl;
-            
-            f2->SetParameters( param[0] , param[1]  , param[2] ,  param[3]  , param[4] );
-            
-            f2->SetParLimits(0,1.,1e+10);
-            f2->SetParLimits(1,0.8,1.2);
-            f2->SetParLimits(2,0.01,0.5);
-            f2->SetParLimits(3,-2.,2.);
-            f2->SetParLimits(4,1.,10);
-            
-             TH1F *hRatio = new TH1F(Form("fabio_EoverP_period%i_eta%i_energy%i_bias%i",iperiod,iEtaBin,iEnergyBin,iBias), "", 50, 0.6, 2.); 
-            hRatio->Sumw2();
+                double x = (iBias == -1) ? iEnergyBin : iBias;
+                //we found a fix function
+                param.push_back(funcs[0]->Func(x));
+                param.push_back(funcs[1]->Func(x));
+                param.push_back(funcs[2]->Func(x));
+                param.push_back(funcs[3]->Func(x));
+                param.push_back(funcs[4]->Func(x));
+                cout << "fixed value is :" << param[0] << " " << param[1] << " " << param[2] << " " << param[3] << " " << param[4] << std::endl;
+                           
+                f2->SetParameters( param[0] , param[1]  , param[2] ,  param[3]  , param[4] );
+                           
+                f2->SetParLimits(0,1.,1e+10);
+                f2->SetParLimits(1,0.8,1.2);
+                f2->SetParLimits(2,0.01,0.5);
+                f2->SetParLimits(3,-2.,2.);
+                f2->SetParLimits(4,1.,10);
+                           
+                TH1F *hRatio = new TH1F(Form("fabio_EoverP_period%i_eta%i_energy%i_bias%i",iperiod,iEtaBin,iEnergyBin,iBias), "", 50, 0.6, 2.);
+                hRatio->Sumw2();
 
-            gStyle->SetOptFit(1);
-            gROOT->ForceStyle();
+                gStyle->SetOptFit(1);
+                gROOT->ForceStyle();
 
-            TCanvas* canvas = new TCanvas("canvas","canvas",800,600) ;
-            canvas->cd() ; 
-            TPad *pad1 =  new TPad("pad1","pad1name",0.01,0.31,0.99,0.99);
-            TPad *pad2 =  new TPad("pad2","pad2name",0.01,0.01,0.99,0.41);
-            pad1->Draw();pad2->Draw();
-            pad1->cd();
-            pad1->SetBottomMargin(0.16);
-            pad2->SetBottomMargin(0.24);
-            map_histog->SetMarkerStyle(20);
-            map_histog->SetMarkerSize(1.);
-            map_histog->GetYaxis()->SetTitle("Events");
-            map_histog->GetXaxis()->SetTitle("EoverP");
-            //map_histog->UseCurrentStyle();
-            map_histog->Draw("E");
-            map_histog->SaveAs(path+Form("fabio_EoverP_period%i_eta%i_energy%i_bias%i.root",iperiod,iEtaBin,iEnergyBin,iBias));
-            map_histog->Fit("f2", "r");
+                TCanvas* canvas = new TCanvas("canvas","canvas",800,600) ;
+                canvas->cd() ;
+                TPad *pad1 =  new TPad("pad1","pad1name",0.01,0.31,0.99,0.99);
+                TPad *pad2 =  new TPad("pad2","pad2name",0.01,0.01,0.99,0.41);
+                pad1->Draw();pad2->Draw();
+                pad1->cd();
+                pad1->SetBottomMargin(0.16);
+                pad2->SetBottomMargin(0.24);
+                map_histog->SetMarkerStyle(20);
+                map_histog->SetMarkerSize(1.);
+                map_histog->GetYaxis()->SetTitle("Events");
+                map_histog->GetXaxis()->SetTitle("EoverP");
+                //map_histog->UseCurrentStyle();
+                map_histog->Draw("E");
+                map_histog->SaveAs(path+Form("fabio_EoverP_period%i_eta%i_energy%i_bias%i.root",iperiod,iEtaBin,iEnergyBin,iBias));
+                map_histog->Fit("f2", "r");
 
-            TString status_fit = gMinuit->fCstatu;
+                TString status_fit = gMinuit->fCstatu;
 
-            file_brokenfit << "eta" << iEtaBin <<"\t"<<"energy" << iEnergyBin <<"\t"<< "bias"<<iBias << "\t"<< status_fit << f2->GetParameter(0) << " " << f2->GetParameter(1) << " " << f2->GetParameter(2) << " " << f2->GetParameter(3) << "  " << f2->GetParameter(4) << endl;
+                file_brokenfit << "eta" << iEtaBin <<"\t"<<"energy" << iEnergyBin <<"\t"<< "bias"<<iBias << "\t"<< status_fit << f2->GetParameter(0) << " " << f2->GetParameter(1) << " " << f2->GetParameter(2) << " " << f2->GetParameter(3) << "  " << f2->GetParameter(4) << endl;
 
-            //if(iEtaBin <= 7){
-            if(iEtaBin <= 16){
-            cout<< " low ETA RATIO " << endl;
-            //map_histog->Print("all");
-            for (int ibin = 11; ibin <= 32; ++ibin) {// nominal fit range
-            int low, high;
-            //low = 13; high = 32; 0.95-1.5
-            //for (int ibin = low; ibin <= high; ++ibin) {
-                if( map_histog->GetBinContent(ibin) > 0 ){
+                //if(iEtaBin <= 7){
+                if(iEtaBin <= 16)
+                {
+                    cout<< " low ETA RATIO " << endl;
+                    //map_histog->Print("all");
+                    for (int ibin = 11; ibin <= 32; ++ibin)
+                    {
+                        // nominal fit range
+                        int low, high;
+                        //low = 13; high = 32; 0.95-1.5
+                        //for (int ibin = low; ibin <= high; ++ibin) {
+                        if( map_histog->GetBinContent(ibin) > 0 )
+                        {
                             double res =  (map_histog->GetBinContent(ibin)- f2->Eval( map_histog->GetBinCenter(ibin) ) )/map_histog->GetBinError(ibin);
                             hRatio->SetBinContent(ibin, res  );
                             hRatio->SetBinError(ibin, map_histog->GetBinError(ibin)  );
+                        }
+                    }
                 }
-           }       
-        } 
-            else{
-            cout<< " higher ETA RATIO " << endl;
-            for (int ibin = 10; ibin <= 32; ++ibin) {
-                if( map_histog->GetBinContent(ibin) > 0 ){
+                else
+                {
+                    cout<< " higher ETA RATIO " << endl;
+                    for (int ibin = 10; ibin <= 32; ++ibin)
+                    {
+                        if( map_histog->GetBinContent(ibin) > 0 )
+                        {
                             double res =  (map_histog->GetBinContent(ibin)- f2->Eval( map_histog->GetBinCenter(ibin) ) )/map_histog->GetBinError(ibin);
                             hRatio->SetBinContent(ibin, res  );
                             hRatio->SetBinError(ibin, map_histog->GetBinError(ibin)  );
+                        }
+                    }
+                    
                 }
-           }       
-        }
-    
-            pad2->cd();
-            hRatio->GetXaxis()->SetTitle((Form("EoverP, #eta bin %i: abs(#eta) in range [%g, %g], E1/E2 bin %i", iEtaBin, m_etaBinning[iEtaBin], m_etaBinning[iEtaBin+1],iEnergyBin )));
+                   
+                pad2->cd();
+                hRatio->GetXaxis()->SetTitle((Form("EoverP, #eta bin %i: abs(#eta) in range [%g, %g], E1/E2 bin %i", iEtaBin, m_etaBinning[iEtaBin], m_etaBinning[iEtaBin+1],iEnergyBin )));
 
-          hRatio->GetYaxis()->SetTitle("DATA / FIT");
-          hRatio->GetYaxis()->SetRangeUser(-50.,50);
-          hRatio->GetXaxis()->SetLabelSize(0.1);
-          hRatio->GetYaxis()->SetLabelSize(0.08);
-          hRatio->GetXaxis()->SetTitleSize(0.08);
-          hRatio->GetYaxis()->SetTitleSize(0.09);
-          hRatio->GetYaxis()->SetTitleOffset(0.6);
-          hRatio->GetXaxis()->SetTitleOffset(1.2);
-          hRatio->Draw("E1");
-          pad2->RedrawAxis();
-          pad2->Update();   
+                hRatio->GetYaxis()->SetTitle("DATA / FIT");
+                hRatio->GetYaxis()->SetRangeUser(-50.,50);
+                hRatio->GetXaxis()->SetLabelSize(0.1);
+                hRatio->GetYaxis()->SetLabelSize(0.08);
+                hRatio->GetXaxis()->SetTitleSize(0.08);
+                hRatio->GetYaxis()->SetTitleSize(0.09);
+                hRatio->GetYaxis()->SetTitleOffset(0.6);
+                hRatio->GetXaxis()->SetTitleOffset(1.2);
+                hRatio->Draw("E1");
+                pad2->RedrawAxis();
+                pad2->Update();
 
-          canvas->SaveAs(path+Form("fabio_EoverP_period%i_eta%i_energy%i_bias%i.pdf",iperiod,iEtaBin,iEnergyBin,iBias));
+                canvas->SaveAs(path+Form("fabio_EoverP_period%i_eta%i_energy%i_bias%i.pdf",iperiod,iEtaBin,iEnergyBin,iBias));
 
- 
-          delete pad1;
-          delete pad2;
-          delete canvas;
+                
+                delete pad1;
+                delete pad2;
+                delete canvas;
 
-            double meanValue = f2->GetParameter(1);
-            double errMeanValue = f2->GetParError(1);
+                double meanValue = f2->GetParameter(1);
+                double errMeanValue = f2->GetParError(1);
 
-            parameters.push_back(meanValue);//0
-            parameters.push_back(errMeanValue);//1
-            return parameters;
+                parameters.push_back(meanValue);//0
+                parameters.push_back(errMeanValue);//1
+                return parameters;
+            }
+            else
+            {
+                cout << "we don't find an availabe fix function for eta: " << iEtaBin << " energy: " << iEnergyBin << " bias: " << iBias << " period: " << iperiod << endl;
+            }
         }
     }
     
@@ -2323,8 +2235,6 @@ void LoadFitInfo(string path)
 {
     if(gInfo.empty())
     {
-        string pathOut = "/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat";
-        
         cout<<" Read fitinto from:  " << path<< endl;
         ifstream file2(path);
         std::string str;
@@ -2355,7 +2265,7 @@ void LoadFitInfo(string path)
             alpha = stod(numbers[7]);
             n = stod(numbers[8]);
                 
-            gInfo.push_back(FitInfo(bin, energy, bias, constant, mean, sigma, alpha, n, error));
+            gInfo.push_back(std::make_shared<FitInfo>(bin, energy, bias, constant, mean, sigma, alpha, n, error));
         }
         cout<< "Read in total: " << gInfo.size() << "fit info data" << endl;
         file2.close();
@@ -2363,16 +2273,16 @@ void LoadFitInfo(string path)
 }
 
 //Get all the fitinfo belong to iEtaBin and iEnergyBin, but we don't include FitInfo with bias = -1
-vector<FitInfo> GetFitInfo(int iEtaBin, int iEnergyzBin, bool excludingBiasMinusOne)
+vector<std::shared_ptr<FitInfo>> GetFitInfo(int iEtaBin, int iEnergyzBin, bool excludingBiasMinusOne)
 {
-    vector<FitInfo> res;
+    vector<std::shared_ptr<FitInfo>> res;
     //load the fitinfo if it is not loaded yet
     LoadFitInfo("/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat");
     for(int i = 0; i < gInfo.size(); i++)
     {
-        if(gInfo[i].eta == iEtaBin && gInfo[i].energy == iEnergyBin)
+        if(gInfo[i]->eta == iEtaBin && gInfo[i]->energy == iEnergyBin)
         {
-            if(gInfo[i].bias == -1 && excludingBiasMinusOne)
+            if(gInfo[i]->bias == -1 && excludingBiasMinusOne)
                 continue;
             res.push_back(gInfo[i]);
         }
@@ -2381,16 +2291,16 @@ vector<FitInfo> GetFitInfo(int iEtaBin, int iEnergyzBin, bool excludingBiasMinus
 }
 
 //only get the simulation data with eta = iEtaBin and bias = -1
-vector<FitInfo> GetFitInfoMCSimulation(int iEtaBin)
+vector<std::shared_ptr<FitInfo>> GetFitInfoMCSimulation(int iEtaBin)
 {
-    vector<FitInfo> res;
+    vector<std::shared_ptr<FitInfo>> res;
     LoadFitInfo("/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat");
     double read = true;
     for(int i = 0; i < gInfo.size(); i++)
     {
-        if(gInfo[i].eta == iEtaBin)
+        if(gInfo[i]->eta == iEtaBin)
         {
-            if(gInfo[i].bias == -1)
+            if(gInfo[i]->bias == -1)
             {
                 if(read)
                 {
@@ -2404,22 +2314,23 @@ vector<FitInfo> GetFitInfoMCSimulation(int iEtaBin)
             }
         }
     }
+    return res;
 }
 
-vector<FitInfo> GetFitInfoExperimentalData(int iEtaBin)
+vector<std::shared_ptr<FitInfo>> GetFitInfoExperimentalData(int iEtaBin)
 {
-    vector<FitInfo> res;
+    vector<std::shared_ptr<FitInfo>> res;
     LoadFitInfo("/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat");
     double read = false;
     for(int i = 0; i < gInfo.size(); i++)
     {
-        if(gInfo[i].eta == iEtaBin)
+        if(gInfo[i]->eta == iEtaBin)
         {
-            if(gInfo[i].bias == -1)
+            if(gInfo[i]->bias == -1)
             {
                 if(read)
                 {
-                    res.push_back(gInfo[i]);
+                    ret.push_back(gInfo[i]);
                     read = false;
                 }
                 else
@@ -2428,10 +2339,282 @@ vector<FitInfo> GetFitInfoExperimentalData(int iEtaBin)
                 }
             }
         }
+    }
+    return res;
+}
+
+//this function load the fitinfo, mark broken data and generate fix function
+void Initialize()
+{
+    cout << "begin to initialize" << endl;
+    LoadFitInfo("/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat");
+    
+    for(int bin = 0; bin <= 15; bin++)
+    {
+        for(int energy = 0; energy <= 9; energy++)
+        {
+            vector<std::shared_ptr<FitInfo>> v = GetFitInfo(bin, energy, true);
+            MarkBrokenFit(v,  2.5);
+            vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFunc(v);
+            if(!funcs.empty())
+            {
+                gFixFuncMap.insert(std::make_pair(std::make_pair(bin, energy), funcs));
+            }
+        }
+    }
+    
+    for(int bin = 0; bin <= 15; bin++)
+    {
+        vector<std::shared_ptr<FitInfo>> v = GetFitInfoExperimentalData(bin);
+        MarkBrokenFit(v,  2.5);
+        vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFuncBiasMinusOne(v);
+        if(!funcs.empty())
+        {
+            gFixFuncDataMap.insert(std::make_pair(bin, funcs));
+        }
+    }
+    
+    for(int bin = 0; bin <= 15; bin++)
+    {
+        vector<std::shared_ptr<FitInfo>> v = GetFitInfoMCSimulation(bin);
+        MarkBrokenFit(v,  2.5);
+        vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFuncBiasMinusOne(v);
+        if(!funcs.empty())
+        {
+            gFixFuncMCMap.insert(std::make_pair(bin, funcs));
+        }
+    }
+    cout << "end of initialization" << endl;
+}
+
+vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<std::shared_ptr<FitInfo>>& info)
+{
+    vector<std::shared_ptr<LinearFitFunc>> res;
+    bool numGood = 0;
+    for(int i = 0; i < info.size(); i++)
+    {
+        if(!info[i]->broken)
+            numGood++;
+    }
+    
+    if(numGood < 2)
+    {
+        cout << "Failed to find enough good data points to generate Fit function" << endl;
+        return res;
+    }
+    
+    if(numGood == info.size())
+    {
+        cout << "All are good, no need to generate fit function" << endl;
+        return res;
+    }
+    
+    double accumEnergy = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumEnergy += (a->broken ? 0.0 : a->energy);
+    });
+    double energyMean = accumEnergy / numGood;
+    
+    // compute constant fit function
+    double accumContant = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumConstant+= (a->broken ? 0.0 : a->contant);
+    });
+    double constantMean = accumConstant / numGood;
+    
+    double accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->energy - energyMean) * (a->constant - constantMean);
+    });
+    
+    double accum2 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum2 += a->broken ? 0.0 : (a->energy - energyMean) * (a->energy - energyMean);
+    });
+    
+    double betaConstant = accum1 / accum2;
+    double alphaConstant = constantMean - betaConstant * energyMean;
+    res.push_back(LinearFitFunc(alphaConstant, betaConstant));
+    //compute mean fit func
+    double accumMean = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumMean+= (a->broken ? 0.0 : a->mean);
+    });
+    double meanMean = accumMean / numGood;
+    
+    accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->energy - energyMean) * (a->mean - meanMean);
+    });
+    
+    double betaMean = accum1 / accum2;
+    double alphaMean = meanMean - betaMean * energyMean;
+    res.push_back(LinearFitFunc(alphaMean, betaMean));
+    //compute sigma fit func
+    double accumSigma = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumSigma+= (a->broken ? 0.0 : a->sigma);
+    });
+    double sigmaMean = accumSigma / numGood;
+    
+    accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->energy - energyMean) * (a->sigma - sigmaMean);
+    });
+    
+    double betaSigma = accum1 / accum2;
+    double alphaSigma = sigmaMean - betaSigma * energyMean;
+    res.push_back(LinearFitFunc(alphaSigma, betaSigma));
+    
+    //compute alpha fit func
+    double accumAlpha = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumAlpha += (a->broken ? 0.0 : a->alpha);
+    });
+    double alphaMean = accumAlpha / numGood;
+    
+    accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->energy - energyMean) * (a->alpha - alphaMean);
+    });
+    
+    double betaAlpha = accum1 / accum2;
+    double alphaAlpha = alphaMean - betaAlpha * energyMean;
+    res.push_back(LinearFitFunc(alphaAlpha, betaAlpha));
+    
+    //compute n fit func
+    double accumN = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumN += (a->broken ? 0.0 : a->n);
+    });
+    double nMean = accumN / numGood;
+    
+    accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->energy - energyMean) * (a->n - nMean);
+    });
+    
+    double betaN = accum1 / accum2;
+    double alphaN = nMean - betaN * energyMean;
+    res.push_back(std::make_shared<LinearFitFunc>(alphaN, betaN));
+    return res;
+}
+
+vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_ptr<FitInfo>>& info)
+{
+    vector<std::shared_ptrLinearFitFunc>> res;
+    bool numGood = 0;
+    for(int i = 0; i < info.size(); i++)
+    {
+        if(!info[i].broken)
+            numGood++;
+    }
+    
+    if(numGood < 2)
+    {
+        cout << "Failed to find enough good data points to generate Fit function" << endl;
+        return res;
+    }
+    
+    if(numGood == info.size())
+    {
+        cout << "All are good, no need to generate fit function" << endl;
+        return res;
+    }
+    
+    double accumBias = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumBias += (a->broken ? 0.0 : a->bias);
+    });
+    double biasMean = accumBias / numGood;
+    
+    // compute constant fit function
+    double accumContant = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumConstant+= (a->broken ? 0.0 : a->contant);
+    });
+    double constantMean = accumConstant / numGood;
+    
+    double accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->bias - biasMean) * (a->constant - constantMean);
+    });
+    
+    double accum2 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum2 += a->broken ? 0.0 : (a->bias - biasMean) * (a->bias - biasMean);
+    });
+    
+    double betaConstant = accum1 / accum2;
+    double alphaConstant = constantMean - betaConstant * biasMean;
+    res.push_back(LinearFitFunc(alphaConstant, betaConstant));
+    //compute mean fit func
+    double accumMean = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumMean+= (a->broken ? 0.0 : a->mean);
+    });
+    double meanMean = accumMean / numGood;
+    
+    accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->bias - biasMean) * (a->mean - meanMean);
+    });
+    
+    double betaMean = accum1 / accum2;
+    double alphaMean = meanMean - betaMean * biasMean;
+    res.push_back(LinearFitFunc(alphaMean, betaMean));
+    //compute sigma fit func
+    double accumSigma = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumSigma+= (a->broken ? 0.0 : a->sigma);
+    });
+    double sigmaMean = accumSigma / numGood;
+    
+    accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->bias - biasMean) * (a->sigma - sigmaMean);
+    });
+    
+    double betaSigma = accum1 / accum2;
+    double alphaSigma = sigmaMean - betaSigma * biasMean;
+    res.push_back(LinearFitFunc(alphaSigma, betaSigma));
+    
+    //compute alpha fit func
+    double accumAlpha = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumAlpha += (a->broken ? 0.0 : a->alpha);
+    });
+    double alphaMean = accumAlpha / numGood;
+    
+    accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->bias - biasMean) * (a->alpha - alphaMean);
+    });
+    
+    double betaAlpha = accum1 / accum2;
+    double alphaAlpha = alphaMean - betaAlpha * biasMean;
+    res.push_back(LinearFitFunc(alphaAlpha, betaAlpha));
+    
+    //compute n fit func
+    double accumN = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accumN += (a->broken ? 0.0 : a->n);
+    });
+    double nMean = accumN / numGood;
+    
+    accum1 = 0.0;
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        accum1 += a->broken ? 0.0 : (a->bias - biasMean) * (a->n - nMean);
+    });
+    
+    double betaN = accum1 / accum2;
+    double alphaN = nMean - betaN * biasMean;
+    res.push_back(std::make_shared<LinearFitFunc>(alphaN, betaN));
+    return res;
 }
 
 //This is an improved version to detect broken fit using Z-score algorithm
-void MarkBrokenFit(vector<FitInfo>& v,  double threshold)
+void MarkBrokenFit(vector<std::shared_ptr<FitInfo>>& v,  double threshold)
 {
     if(v.size() <= 1)
     {
@@ -2440,23 +2623,23 @@ void MarkBrokenFit(vector<FitInfo>& v,  double threshold)
     }
     
     //first we compute the mean value of the error
-    auto lambda = [&](FitInfo a, FitInfo b){ return a.error + b.error; };
+    auto lambda = [&](const std::shared_ptr<FitInfo> a, const std::shared_ptr<FitInfo> b){ return a->error + b->error; };
     double sum = std::accumulate(v.begin(), v.end(), 0.0, lambda);
     double mean = sum / v.size();
     
     //now compute the standard deviation
     double accum = 0.0;
-    std::for_each (std::begin(v), std::end(v), [&](const FitInfo info) {
-        accum += (info.error - mean) * (info.error - mean);
+    std::for_each (std::begin(v), std::end(v), [&](const std::shared_ptr<FitInfo> info) {
+        accum += (info->error - mean) * (info->error - mean);
     });
 
     double stdev = sqrt(accum / (v.size() - 1));
     //now mark the broken ones
     for(int i = 0; i < v.size(); i++)
     {
-        double z_score = fabs((v[i].error - mean) / stdev);
+        double z_score = fabs((v[i]->error - mean) / stdev);
         if(z_score > threshold)
-            v[i].broken = true;
+            v[i]->broken = true;
     }
 }
 

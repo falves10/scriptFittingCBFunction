@@ -96,8 +96,8 @@ public:
     LinearFitFunc(double alpha, double beta): _alpha(alpha), _beta(beta){}
     LinearFitFunc(const LinearFitFunc& a)
     {
-        this._alpha = a._alpha;
-        this._beta = a._beta;
+        this->_alpha = a._alpha;
+        this->_beta = a._beta;
     }
     
     double Func(double x)
@@ -114,12 +114,12 @@ std::vector<std::shared_ptr<FitInfo>> gMCInfo;
 std::vector<std::shared_ptr<FitInfo>> gDataInfo;
 typedef std::pair<int,int> BinEnergyPair;
 std::map<BinEnergyPair, std::vector<std::shared_ptr<LinearFitFunc>>> gFixFuncMap;
-std::map<int, std::vector<std:shared_ptr<LinearFitFunc>>> gFixFuncMCMap;
+std::map<int, std::vector<std::shared_ptr<LinearFitFunc>>> gFixFuncMCMap;
 std::map<int, std::vector<std::shared_ptr<LinearFitFunc>>> gFixFuncDataMap;
 
 void Initialize();
 void LoadFitInfo(string path);
-vector<std::shared_ptr<FitInfo>> GetFitInfo(int iEtaBin, int iEnergyzBin, bool excludingBiasMinusOne)
+vector<std::shared_ptr<FitInfo>> GetFitInfo(int iEtaBin, int iEnergyzBin, bool excludingBiasMinusOne);
 vector<std::shared_ptr<FitInfo>> GetFitInfoMCSimulation(int iEtaBin);
 vector<std::shared_ptr<FitInfo>> GetFitInfoExperimentalData(int iEtaBin);
 vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<std::shared_ptr<FitInfo>>& info);
@@ -2280,7 +2280,7 @@ vector<std::shared_ptr<FitInfo>> GetFitInfo(int iEtaBin, int iEnergyzBin, bool e
     LoadFitInfo("/publicfs/atlas/atlasnew/higgs/hgg/fabiolucio/EgammCalibration/Codes_ntuples/condor/calibrated_m_eOverp/Histograms/merge_test/dataPoints.dat");
     for(int i = 0; i < gInfo.size(); i++)
     {
-        if(gInfo[i]->eta == iEtaBin && gInfo[i]->energy == iEnergyBin)
+        if(gInfo[i]->eta == iEtaBin && gInfo[i]->energy == iEnergyzBin)
         {
             if(gInfo[i]->bias == -1 && excludingBiasMinusOne)
                 continue;
@@ -2330,7 +2330,7 @@ vector<std::shared_ptr<FitInfo>> GetFitInfoExperimentalData(int iEtaBin)
             {
                 if(read)
                 {
-                    ret.push_back(gInfo[i]);
+                    res.push_back(gInfo[i]);
                     read = false;
                 }
                 else
@@ -2390,7 +2390,7 @@ void Initialize()
 vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<std::shared_ptr<FitInfo>>& info)
 {
     vector<std::shared_ptr<LinearFitFunc>> res;
-    bool numGood = 0;
+    int numGood = 0;
     for(int i = 0; i < info.size(); i++)
     {
         if(!info[i]->broken)

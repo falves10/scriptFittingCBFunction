@@ -1729,6 +1729,7 @@ else
             v = GetFitInfoMCSimulation(iEtaBin);
     }
     
+    cout << "Check whether " << iEtaBin << ", " << iEnergyBin << ", " << iBias << ", period " << iperiod << " is broken or not" << endl;
     for(int i = 0; i < v.size(); i++)
     {
         if(v[i]->broken && v[i]->bias == iBias && v[i]->eta == iEtaBin && v[i]->energy == iEnergyBin)
@@ -1860,7 +1861,7 @@ else
             }
         }
     }
-    
+    cout << "==========================================" << endl;
     parameters.push_back(0);//0
     parameters.push_back(0);//1    
     return parameters;

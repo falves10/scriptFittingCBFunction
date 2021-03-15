@@ -113,7 +113,7 @@ std::vector<std::shared_ptr<FitInfo>> gInfo;
 std::vector<std::shared_ptr<FitInfo>> gMCInfo;
 std::vector<std::shared_ptr<FitInfo>> gDataInfo;
 typedef std::pair<int,int> BinEnergyPair;
-std::map<BinEnergyPair, std::vector<LinearFitFunc>> gFixFuncMap;
+std::map<BinEnergyPair, std::vector<std::shared_ptr<LinearFitFunc>>> gFixFuncMap;
 std::map<int, std::vector<std:shared_ptr<LinearFitFunc>>> gFixFuncMCMap;
 std::map<int, std::vector<std::shared_ptr<LinearFitFunc>>> gFixFuncDataMap;
 
@@ -1736,8 +1736,8 @@ else
             cout << "bin: " << v[i]->eta << " energy: " << v[i]->energy << " bias: " << v[i]->bias << " period: " << iperiod << " is broken" << endl;
             //it needs to be fixed
             std::vector<std::shared_ptr<LinearFitFunc>> funcs;
-            if(iBias != -1 && gFixFuncMCMap.find(std::make_pair(iEtaBin, iEnergyBin)) != gFixFuncMCMap.end())
-                funcs = gFixFuncMCMap[std::make_pair(iEtaBin, iEnergyBin)];
+            if(iBias != -1 && gFixFuncMap.find(std::make_pair(iEtaBin, iEnergyBin)) != gFixFuncMap.end())
+                funcs = gFixFuncMap[std::make_pair(iEtaBin, iEnergyBin)];
             else if(iperiod == 0 && gFixFuncDataMap.find(iEtaBin) != gFixFuncDataMap.end())
                 funcs = gFixFuncDataMap[iEtaBin];
             else if(iperiod == 1 && gFixFuncMCMap.find(iEtaBin) != gFixFuncMCMap.end())
@@ -2358,7 +2358,7 @@ void Initialize()
             vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFunc(v);
             if(!funcs.empty())
             {
-                gFixFuncMap.insert(std::make_pair(std::make_pair(bin, energy), funcs));
+                gFixFuncMap[std::make_pair(bin, energy)] = funcs;
             }
         }
     }
@@ -2416,9 +2416,9 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<
     double energyMean = accumEnergy / numGood;
     
     // compute constant fit function
-    double accumContant = 0.0;
+    double accumConstant = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
-        accumConstant+= (a->broken ? 0.0 : a->contant);
+        accumConstant+= (a->broken ? 0.0 : a->constant);
     });
     double constantMean = accumConstant / numGood;
     
@@ -2434,7 +2434,7 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<
     
     double betaConstant = accum1 / accum2;
     double alphaConstant = constantMean - betaConstant * energyMean;
-    res.push_back(LinearFitFunc(alphaConstant, betaConstant));
+    res.push_back(std::make_shared<LinearFitFunc>(alphaConstant, betaConstant));
     //compute mean fit func
     double accumMean = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
@@ -2449,7 +2449,7 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<
     
     double betaMean = accum1 / accum2;
     double alphaMean = meanMean - betaMean * energyMean;
-    res.push_back(LinearFitFunc(alphaMean, betaMean));
+    res.push_back(std::make_shared<LinearFitFunc>(alphaMean, betaMean));
     //compute sigma fit func
     double accumSigma = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
@@ -2464,23 +2464,23 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<
     
     double betaSigma = accum1 / accum2;
     double alphaSigma = sigmaMean - betaSigma * energyMean;
-    res.push_back(LinearFitFunc(alphaSigma, betaSigma));
+    res.push_back(std::make_shared<LinearFitFunc>(alphaSigma, betaSigma));
     
     //compute alpha fit func
     double accumAlpha = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
         accumAlpha += (a->broken ? 0.0 : a->alpha);
     });
-    double alphaMean = accumAlpha / numGood;
+    double alphaMean1 = accumAlpha / numGood;
     
     accum1 = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
-        accum1 += a->broken ? 0.0 : (a->energy - energyMean) * (a->alpha - alphaMean);
+        accum1 += a->broken ? 0.0 : (a->energy - energyMean) * (a->alpha - alphaMean1);
     });
     
     double betaAlpha = accum1 / accum2;
-    double alphaAlpha = alphaMean - betaAlpha * energyMean;
-    res.push_back(LinearFitFunc(alphaAlpha, betaAlpha));
+    double alphaAlpha = alphaMean1 - betaAlpha * energyMean;
+    res.push_back(std::make_shared<LinearFitFunc>(alphaAlpha, betaAlpha));
     
     //compute n fit func
     double accumN = 0.0;
@@ -2502,11 +2502,11 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<
 
 vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_ptr<FitInfo>>& info)
 {
-    vector<std::shared_ptrLinearFitFunc>> res;
+    vector<std::shared_ptr<LinearFitFunc>> res;
     bool numGood = 0;
     for(int i = 0; i < info.size(); i++)
     {
-        if(!info[i].broken)
+        if(!info[i]->broken)
             numGood++;
     }
     
@@ -2529,9 +2529,9 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_
     double biasMean = accumBias / numGood;
     
     // compute constant fit function
-    double accumContant = 0.0;
+    double accumConstant = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
-        accumConstant+= (a->broken ? 0.0 : a->contant);
+        accumConstant+= (a->broken ? 0.0 : a->constant);
     });
     double constantMean = accumConstant / numGood;
     
@@ -2547,7 +2547,7 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_
     
     double betaConstant = accum1 / accum2;
     double alphaConstant = constantMean - betaConstant * biasMean;
-    res.push_back(LinearFitFunc(alphaConstant, betaConstant));
+    res.push_back(std::make_shared<LinearFitFunc>(alphaConstant, betaConstant));
     //compute mean fit func
     double accumMean = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
@@ -2562,7 +2562,7 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_
     
     double betaMean = accum1 / accum2;
     double alphaMean = meanMean - betaMean * biasMean;
-    res.push_back(LinearFitFunc(alphaMean, betaMean));
+    res.push_back(std::make_shared<LinearFitFunc>(alphaMean, betaMean));
     //compute sigma fit func
     double accumSigma = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
@@ -2577,23 +2577,23 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_
     
     double betaSigma = accum1 / accum2;
     double alphaSigma = sigmaMean - betaSigma * biasMean;
-    res.push_back(LinearFitFunc(alphaSigma, betaSigma));
+    res.push_back(std::make_shared<LinearFitFunc>(alphaSigma, betaSigma));
     
     //compute alpha fit func
     double accumAlpha = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
         accumAlpha += (a->broken ? 0.0 : a->alpha);
     });
-    double alphaMean = accumAlpha / numGood;
+    double alphaMean1 = accumAlpha / numGood;
     
     accum1 = 0.0;
     std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
-        accum1 += a->broken ? 0.0 : (a->bias - biasMean) * (a->alpha - alphaMean);
+        accum1 += a->broken ? 0.0 : (a->bias - biasMean) * (a->alpha - alphaMean1);
     });
     
     double betaAlpha = accum1 / accum2;
-    double alphaAlpha = alphaMean - betaAlpha * biasMean;
-    res.push_back(LinearFitFunc(alphaAlpha, betaAlpha));
+    double alphaAlpha = alphaMean1 - betaAlpha * biasMean;
+    res.push_back(std::make_shared<LinearFitFunc>(alphaAlpha, betaAlpha));
     
     //compute n fit func
     double accumN = 0.0;

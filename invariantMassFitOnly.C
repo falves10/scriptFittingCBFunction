@@ -1731,7 +1731,7 @@ else
     
     for(int i = 0; i < v.size(); i++)
     {
-        if(v[i]->broken && v[i]->bias == iBias)
+        if(v[i]->broken && v[i]->bias == iBias && v[i]->eta == iEtaBin && v[i]->energy == iEnergyBin)
         {
             cout << "bin: " << v[i]->eta << " energy: " << v[i]->energy << " bias: " << v[i]->bias << " period: " << iperiod << " is broken" << endl;
             //it needs to be fixed
@@ -2354,7 +2354,7 @@ void Initialize()
         for(int energy = 0; energy <= 9; energy++)
         {
             vector<std::shared_ptr<FitInfo>> v = GetFitInfo(bin, energy, true);
-            MarkBrokenFit(v,  2.5);
+            MarkBrokenFit(v,  2.0);
             vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFunc(v);
             if(!funcs.empty())
             {
@@ -2366,7 +2366,7 @@ void Initialize()
     for(int bin = 0; bin <= 15; bin++)
     {
         vector<std::shared_ptr<FitInfo>> v = GetFitInfoExperimentalData(bin);
-        MarkBrokenFit(v,  2.5);
+        MarkBrokenFit(v,  2.0);
         vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFuncBiasMinusOne(v);
         if(!funcs.empty())
         {
@@ -2377,7 +2377,7 @@ void Initialize()
     for(int bin = 0; bin <= 15; bin++)
     {
         vector<std::shared_ptr<FitInfo>> v = GetFitInfoMCSimulation(bin);
-        MarkBrokenFit(v,  2.5);
+        MarkBrokenFit(v,  2.0);
         vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFuncBiasMinusOne(v);
         if(!funcs.empty())
         {
@@ -2639,7 +2639,7 @@ void MarkBrokenFit(vector<std::shared_ptr<FitInfo>>& v,  double threshold)
     //now mark the broken ones
     for(int i = 0; i < v.size(); i++)
     {
-        double z_score = fabs((v[i]->error - mean) / stdev);
+        double z_score = (v[i]->error - mean) / stdev;
         if(z_score > threshold)
             v[i]->broken = true;
     }

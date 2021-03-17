@@ -89,8 +89,15 @@ public:
     {}
 };
 
+class IFunction
+{
+public:
+    virtual ~IFunction(){};
+    virtual double Compute(double x) = 0;
+};
+
 //linear function used to fix broken data
-class LinearFitFunc
+class LinearFitFunc : public IFunction
 {
 public:
     LinearFitFunc(double alpha, double beta): _alpha(alpha), _beta(beta){}
@@ -100,7 +107,7 @@ public:
         this->_beta = a._beta;
     }
     
-    double Func(double x)
+    virtual double Compute(double x) override
     {
         return _beta * x + _alpha;
     }
@@ -109,21 +116,44 @@ private:
     double _beta;
 };
 
+//represent ax^2 + bx + c
+class NonlinearFitFunc : public IFunction
+{
+public:
+    NonlinearFitFunc(double a, double b, double c): _a(a), _b(b), _c(c){}
+    NonlinearFitFunc(const NonlinearFitFunc& f)
+    {
+        this->_a = f._a;
+        this->_b = f._b;
+        this->_c = f._c;
+    }
+    
+    virtual double Compute(double x) override
+    {
+        return _a * x * x + _b * x + _c;
+    }
+private:
+    double _a;
+    double _b;
+    double _c;
+}
+
 std::vector<std::shared_ptr<FitInfo>> gInfo;
 std::vector<std::shared_ptr<FitInfo>> gMCInfo;
 std::vector<std::shared_ptr<FitInfo>> gDataInfo;
 typedef std::pair<int,int> BinEnergyPair;
-std::map<BinEnergyPair, std::vector<std::shared_ptr<LinearFitFunc>>> gFixFuncMap;
-std::map<int, std::vector<std::shared_ptr<LinearFitFunc>>> gFixFuncMCMap;
-std::map<int, std::vector<std::shared_ptr<LinearFitFunc>>> gFixFuncDataMap;
+std::map<BinEnergyPair, std::vector<std::shared_ptr<IFunction>>> gFixFuncMap;
+std::map<int, std::vector<std::shared_ptr<IFunction>>> gFixFuncMCMap;
+std::map<int, std::vector<std::shared_ptr<IFunction>>> gFixFuncDataMap;
 
 void Initialize();
 void LoadFitInfo(string path);
 vector<std::shared_ptr<FitInfo>> GetFitInfo(int iEtaBin, int iEnergyzBin, bool excludingBiasMinusOne);
 vector<std::shared_ptr<FitInfo>> GetFitInfoMCSimulation(int iEtaBin);
 vector<std::shared_ptr<FitInfo>> GetFitInfoExperimentalData(int iEtaBin);
-vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<std::shared_ptr<FitInfo>>& info);
-vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_ptr<FitInfo>>& info);
+vector<std::shared_ptr<IFunction>> GenerateFitFuncBiasMinusOneNonLinear(const vector<std::shared_ptr<FitInfo>>& info);
+vector<std::shared_ptr<IFunction>> GenerateFitFuncBiasMinusOne(const vector<std::shared_ptr<FitInfo>>& info);
+vector<std::shared_ptr<IFunction>> GenerateFitFunc(const vector<std::shared_ptr<FitInfo>>& info);
 void MarkBrokenFit(vector<std::shared_ptr<FitInfo>>& v,  double threshold);
 void FindBrokenBias(vector<FitInfo>& v);
 
@@ -1736,7 +1766,7 @@ else
         {
             cout << "bin: " << v[i]->eta << " energy: " << v[i]->energy << " bias: " << v[i]->bias << " period: " << iperiod << " is broken" << endl;
             //it needs to be fixed
-            std::vector<std::shared_ptr<LinearFitFunc>> funcs;
+            std::vector<std::shared_ptr<IFunction>> funcs;
             if(iBias != -1 && gFixFuncMap.find(std::make_pair(iEtaBin, iEnergyBin)) != gFixFuncMap.end())
                 funcs = gFixFuncMap[std::make_pair(iEtaBin, iEnergyBin)];
             else if(iperiod == 0 && gFixFuncDataMap.find(iEtaBin) != gFixFuncDataMap.end())
@@ -1750,11 +1780,11 @@ else
             {
                 double x = (iBias == -1) ? iEnergyBin : iBias;
                 //we found a fix function
-                param.push_back(funcs[0]->Func(x));
-                param.push_back(funcs[1]->Func(x));
-                param.push_back(funcs[2]->Func(x));
-                param.push_back(funcs[3]->Func(x));
-                param.push_back(funcs[4]->Func(x));
+                param.push_back(funcs[0]->Compute(x));
+                param.push_back(funcs[1]->Compute(x));
+                param.push_back(funcs[2]->Compute(x));
+                param.push_back(funcs[3]->Compute(x));
+                param.push_back(funcs[4]->Compute(x));
                 cout << "fixed value is :" << param[0] << " " << param[1] << " " << param[2] << " " << param[3] << " " << param[4] << std::endl;
                            
                 f2->SetParameters( param[0] , param[1]  , param[2] ,  param[3]  , param[4] );
@@ -2356,7 +2386,7 @@ void Initialize()
         {
             vector<std::shared_ptr<FitInfo>> v = GetFitInfo(bin, energy, true);
             MarkBrokenFit(v,  2.0);
-            vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFunc(v);
+            vector<std::shared_ptr<IFunction>> funcs = GenerateFitFunc(v);
             if(!funcs.empty())
             {
                 gFixFuncMap[std::make_pair(bin, energy)] = funcs;
@@ -2368,7 +2398,7 @@ void Initialize()
     {
         vector<std::shared_ptr<FitInfo>> v = GetFitInfoExperimentalData(bin);
         MarkBrokenFit(v,  2.0);
-        vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFuncBiasMinusOne(v);
+        vector<std::shared_ptr<IFunction>> funcs = GenerateFitFuncBiasMinusOneNonLinear(v)/*GenerateFitFuncBiasMinusOne(v)*/;
         if(!funcs.empty())
         {
             gFixFuncDataMap.insert(std::make_pair(bin, funcs));
@@ -2379,7 +2409,7 @@ void Initialize()
     {
         vector<std::shared_ptr<FitInfo>> v = GetFitInfoMCSimulation(bin);
         MarkBrokenFit(v,  2.0);
-        vector<std::shared_ptr<LinearFitFunc>> funcs = GenerateFitFuncBiasMinusOne(v);
+        vector<std::shared_ptr<IFunction>> funcs = GenerateFitFuncBiasMinusOneNonLinear(v)/*GenerateFitFuncBiasMinusOne(v)*/;
         if(!funcs.empty())
         {
             gFixFuncMCMap.insert(std::make_pair(bin, funcs));
@@ -2388,9 +2418,9 @@ void Initialize()
     cout << "end of initialization" << endl;
 }
 
-vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<std::shared_ptr<FitInfo>>& info)
+vector<std::shared_ptr<IFunction>> GenerateFitFuncBiasMinusOne(const vector<std::shared_ptr<FitInfo>>& info)
 {
-    vector<std::shared_ptr<LinearFitFunc>> res;
+    vector<std::shared_ptr<IFunction>> res;
     int numGood = 0;
     for(int i = 0; i < info.size(); i++)
     {
@@ -2501,9 +2531,124 @@ vector<std::shared_ptr<LinearFitFunc>> GenerateFitFuncBiasMinusOne(const vector<
     return res;
 }
 
-vector<std::shared_ptr<LinearFitFunc>> GenerateFitFunc(const vector<std::shared_ptr<FitInfo>>& info)
+vector<std::shared_ptr<IFunction>> GenerateFitFuncBiasMinusOneNonLinear(const vector<std::shared_ptr<FitInfo>>& info)
 {
-    vector<std::shared_ptr<LinearFitFunc>> res;
+    vector<std::shared_ptr<IFunction>> res;
+    int numGood = 0;
+    for(int i = 0; i < info.size(); i++)
+    {
+        if(!info[i]->broken)
+            numGood++;
+    }
+    
+    if(numGood < 3)
+    {
+        cout << "Failed to find enough good data points to generate Non linear Fit function, we need at least 3 good fit!" << endl;
+        return res;
+    }
+    
+    if(numGood == info.size())
+    {
+        cout << "All are good, no need to generate non linear fit function" << endl;
+        return res;
+    }
+    
+    double sum_xi = 0, sum_xi2 = 0, sum_xi3 = 0, sum_xi4 = 0;
+    double sum_constant = 0, sum_xi_constant = 0, sum_xi2_constant = 0;
+    double sum_mean = 0, sum_xi_mean = 0, sum_xi2_mean = 0;
+    double sum_sigma = 0, sum_xi_sigma = 0, sum_xi2_sigma = 0;
+    double sum_alpha = 0, sum_xi_alpha = 0, sum_xi2_alpha = 0;
+    double sum_n = 0, sum_xi_n = 0, sum_xi2_n = 0;
+    
+    std::for_each (std::begin(info), std::end(info), [&](const std::shared_ptr<FitInfo> a) {
+        if(!a->broken)
+        {
+            sum_xi += a->energy;
+            sum_xi2 += a->energy * a->energy;
+            sum_xi3 += a->energy * a->energy * a->energy;
+            sum_xi4 += a->energy * a->energy * a->energy * a->energy;
+            
+            sum_constant += a->constant;
+            sum_xi_constant += a->energy * a->constant;
+            sum_xi2_constant += a->energy * a->energy * a->constant;
+            
+            sum_mean += a->mean;
+            sum_xi_mean += a->energy * a->mean;
+            sum_xi2_mean += a->energy * a->energy * a->mean;
+            
+            sum_sigma += a->sigma;
+            sum_xi_sigma += a->energy * a->sigma;
+            sum_xi2_sigma += a->energy * a->energy * a->sigma;
+            
+            sum_alpha += a->alpha;
+            sum_xi_alpha += a->energy * a->alpha;
+            sum_xi2_alpha += a->energy * a->energy * a->alpha;
+            
+            sum_n += a->n;
+            sum_xi_n += a->energy * a->n;
+            sum_xi2_n += a->energy * a->energy * a->n;
+        }
+    });
+    
+    double detM = numGood * (sum_xi2 * sum_xi4 - sum_xi3 * sum_xi3) - sum_xi * (sum_xi * sum_xi4 - sum_xi2 * sum_xi3) + sum_xi2 * (sum_xi * sum_xi3 - sum_xi2 * sum_xi2);
+    
+    if(fbs(detM) < 0.00000001)
+    {
+        cout << "detM is too small to give a meaningful value" << endl;
+        return res;
+    }
+    
+    double detM0_constant = sum_constant * (sum_xi2 * sum_xi4 - sum_xi3 * sum_xi3) - sum_xi * (sum_xi_constant * sum_xi4 - sum_xi2_constant * sum_xi3) + sum_xi2 * (sum_xi_constant * sum_xi3 - sum_xi2_constant * sum_xi2);
+    double detM1_constant = numGood * (sum_xi_constant * sum_xi4 - sum_xi3 * sum_xi2_constant) - sum_constant * (sum_xi * sum_xi4 - sum_xi2 * sum_xi3) + sum_xi2 * (sum_xi * sum_xi2_constant - sum_xi2 * sum_xi_constant);
+    double detM2_constant = numGood * (sum_xi2 * sum_xi2_constant - sum_xi3 * sum_xi_constant) - sum_xi * (sum_xi * sum_xi2_constant - sum_xi2 * sum_xi_constant) + sum_constant * (sum_xi * sum_xi3 - sum_xi2 * sum_xi2);
+    
+    double detM0_mean = sum_mean * (sum_xi2 * sum_xi4 - sum_xi3 * sum_xi3) - sum_xi * (sum_xi_mean * sum_xi4 - sum_xi2_mean * sum_xi3) + sum_xi2 * (sum_xi_mean * sum_xi3 - sum_xi2_mean * sum_xi2);
+    double detM1_mean = numGood * (sum_xi_mean * sum_xi4 - sum_xi3 * sum_xi2_mean) - sum_mean * (sum_xi * sum_xi4 - sum_xi2 * sum_xi3) + sum_xi2 * (sum_xi * sum_xi2_mean - sum_xi2 * sum_xi_mean);
+    double detM2_mean = numGood * (sum_xi2 * sum_xi2_mean - sum_xi3 * sum_xi_mean) - sum_xi * (sum_xi * sum_xi2_mean - sum_xi2 * sum_xi_mean) + sum_mean * (sum_xi * sum_xi3 - sum_xi2 * sum_xi2);
+    
+    double detM0_sigma = sum_sigma * (sum_xi2 * sum_xi4 - sum_xi3 * sum_xi3) - sum_xi * (sum_xi_sigma * sum_xi4 - sum_xi2_sigma * sum_xi3) + sum_xi2 * (sum_xi_sigma * sum_xi3 - sum_xi2_sigma * sum_xi2);
+    double detM1_sigma = numGood * (sum_xi_sigma * sum_xi4 - sum_xi3 * sum_xi2_sigma) - sum_mean * (sum_xi * sum_xi4 - sum_xi2 * sum_xi3) + sum_xi2 * (sum_xi * sum_xi2_sigma - sum_xi2 * sum_xi_sigma);
+    double detM2_sigma = numGood * (sum_xi2 * sum_xi2_sigma - sum_xi3 * sum_xi_sigma) - sum_xi * (sum_xi * sum_xi2_sigma - sum_xi2 * sum_xi_sigma) + sum_sigma * (sum_xi * sum_xi3 - sum_xi2 * sum_xi2);
+    
+    double detM0_alpha = sum_alpha * (sum_xi2 * sum_xi4 - sum_xi3 * sum_xi3) - sum_xi * (sum_xi_alpha * sum_xi4 - sum_xi2_alpha * sum_xi3) + sum_xi2 * (sum_xi_alpha * sum_xi3 - sum_xi2_alpha * sum_xi2);
+    double detM1_alpha = numGood * (sum_xi_alpha * sum_xi4 - sum_xi3 * sum_xi2_alpha) - sum_alpha * (sum_xi * sum_xi4 - sum_xi2 * sum_xi3) + sum_xi2 * (sum_xi * sum_xi2_alpha - sum_xi2 * sum_xi_alpha);
+    double detM2_alpha = numGood * (sum_xi2 * sum_xi2_alpha - sum_xi3 * sum_xi_alpha) - sum_xi * (sum_xi * sum_xi2_alpha - sum_xi2 * sum_xi_alpha) + sum_alpha * (sum_xi * sum_xi3 - sum_xi2 * sum_xi2);
+    
+    double detM0_n = sum_n * (sum_xi2 * sum_xi4 - sum_xi3 * sum_xi3) - sum_xi * (sum_xi_n * sum_xi4 - sum_xi2_n * sum_xi3) + sum_xi2 * (sum_xi_n * sum_xi3 - sum_xi2_n * sum_xi2);
+    double detM1_n = numGood * (sum_xi_n * sum_xi4 - sum_xi3 * sum_xi2_n) - sum_n * (sum_xi * sum_xi4 - sum_xi2 * sum_xi3) + sum_xi2 * (sum_xi * sum_xi2_n - sum_xi2 * sum_xi_n);
+    double detM2_n = numGood * (sum_xi2 * sum_xi2_n - sum_xi3 * sum_xi_n) - sum_xi * (sum_xi * sum_xi2_n - sum_xi2 * sum_xi_n) + sum_n * (sum_xi * sum_xi3 - sum_xi2 * sum_xi2);
+    
+    double a_constant = detM2_constant / detM;
+    double b_constant = detM1_constant / detM;
+    double c_constant = detM0_constant / detM;
+    
+    double a_mean = detM2_mean / detM;
+    double b_mean = detM1_mean / detM;
+    double c_mean = detM0_mean / detM;
+    
+    double a_sigma = detM2_sigma / detM;
+    double b_sigma = detM1_sigma / detM;
+    double c_sigma = detM0_sigma / detM;
+    
+    double a_alpha = detM2_alpha / detM;
+    double b_alpha = detM1_alpha / detM;
+    double c_alpha = detM0_alpha / detM;
+    
+    double a_n = detM2_n / detM;
+    double b_n = detM1_n / detM;
+    double c_n = detM0_n / detM;
+    
+    res.push_back(std::make_shared<NonlinearFitFunc>(a_constant, b_constant, c_constant));
+    res.push_back(std::make_shared<NonlinearFitFunc>(a_mean, b_mean, c_mean));
+    res.push_back(std::make_shared<NonlinearFitFunc>(a_sigma, b_sigma, c_sigma));
+    res.push_back(std::make_shared<NonlinearFitFunc>(a_alpha, b_alpha, c_alpha));
+    res.push_back(std::make_shared<NonlinearFitFunc>(a_n, b_n, c_n));
+    return res;
+}
+
+vector<std::shared_ptr<IFunction>> GenerateFitFunc(const vector<std::shared_ptr<FitInfo>>& info)
+{
+    vector<std::shared_ptr<IFunction>> res;
     int numGood = 0;
     for(int i = 0; i < info.size(); i++)
     {
